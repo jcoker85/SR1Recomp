@@ -1,0 +1,20 @@
+# Smuggler's Run (USA, SLUS-20065, program CRC 0E7F91DA): the launcher's code options, built into the game program as
+# eerecomp --toggles lines (ADDRESS WORD COND_ADDRESS VALUE, hex): the instruction at ADDRESS is WORD while the 16-bit value
+# at COND_ADDRESS is VALUE, otherwise the disc's own instruction. The launcher sets the option words in boot.txt
+# ("2 000FFF00 2 1" and so on); below the program (it loads at 0x100000), so the game never touches them.
+#
+# [Widescreen 16:9] after the PCSX2 community patch by Devina, sergx12 and Aced14. Their patch jumps from 0x23CA3C into a
+# code cave at 0x268B6C to multiply the view's width by 4/3 before the game divides it by the height (div.s f2,f2,f0 at
+# 0x23CA7C: the aspect, stored at 292(t2)). Toggles can only switch plain instructions, so the same is done here in three
+# of the function's own empty load-delay slots: the aspect is divided by 0.75 (exactly 4/3 times wider; at and f31 are free
+# there, as in their patch).
+0023CA34 3C013F40 000FFF00 1   # nop -> lui at,0x3F40       (0.75)
+0023CA60 4481F800 000FFF00 1   # nop -> mtc1 at,f31
+0023CA88 461F1083 000FFF00 1   # nop -> div.s f2,f2,f31     (aspect / 0.75)
+#
+# [60 FPS] after the PCSX2 community patch by Souzooka. Their patch makes the game set its frame interval (the word at
+# 0x2C4F14: 1 vblank in the menus, 2 from the first frame of driving until the player quits; set at 0x1032BC) to 1 when
+# driving starts. Here the one instruction that reads that word (0x234C5C, which hands it to the vsync wait at 0x4F8998)
+# reads 1 instead, which has the same effect but leaves the word as the game keeps it: Menu/Movie Aspect Ratio
+# (menus43.txt) uses it to tell driving from the menus.
+00234C5C 24020001 000FFF08 1   # lw v0,20244(v1) -> addiu v0,zero,1

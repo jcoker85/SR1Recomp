@@ -1,0 +1,3 @@
+# [60 FPS] (after the PCSX2 community patch by Souzooka): the code is built into the game program (toggles.txt); this
+# ps2run --patches line switches it on. PLACE ADDRESS BYTES VALUE, place 2 = written at boot and every frame.
+2 000FFF08 2 1

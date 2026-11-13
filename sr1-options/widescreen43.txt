@@ -1,0 +1,3 @@
+# [Widescreen 16:9] for the 4:3 Menus option (menus43.txt): no lines here. The widescreen code built into the game program
+# (toggles.txt) is switched by the word at 0x000FFF00, which the runtime keeps at 1 while the picture is 16:9 (driving) and
+# at 0 while it is 4:3 (menus, loading, videos).

@@ -1,0 +1,12 @@
+# Smuggler's Run "4:3 Menus" (the launcher's Menu/Movie Aspect Ratio option): with widescreen on, only the driving (and its
+# pause menu) is 16:9; the front-end menus, the loading screens and the videos are 4:3.
+# NAME=VALUE lines set for the runtime (runtime/src/system.cpp, update_wide):
+#   PS2_WIDE_ONLY_IF  16:9 only while this 32-bit word of EE memory has this value, and no IPU picture decode in the last 15
+#                     frames (the videos). 0x002C4F14 is the game's frame interval: 1 vblank in the front end and on the
+#                     loading screens, 2 from the first frame of driving until the player quits (pause menu included; found
+#                     2026-11-13 by tracking the game's globals through Joyridin' and Turf War). The 60 FPS option changes
+#                     what the game reads from it, not the word (toggles.txt), so it works with 60 FPS too.
+#   PS2_WIDE_WORD     the runtime writes 1/0 into this 16-bit word each frame: the switch of the widescreen code built into
+#                     the game program (toggles.txt), so the game's view follows the picture.
+PS2_WIDE_ONLY_IF=002C4F14=2
+PS2_WIDE_WORD=000FFF00

@@ -1,0 +1,3 @@
+# [Widescreen 16:9] (after the PCSX2 community patch by Devina, sergx12 and Aced14): the code is built into the game program
+# (toggles.txt); this ps2run --patches line switches it on. PLACE ADDRESS BYTES VALUE, place 2 = written at boot and every frame.
+2 000FFF00 2 1

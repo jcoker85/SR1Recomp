@@ -867,7 +867,7 @@ index ae5f346..b4c8663 100644
 +    return vec4<f32>(clamp(pix, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 +}
 diff --git a/runtime/src/gs/gpu/gpu.cpp b/runtime/src/gs/gpu/gpu.cpp
-index 8f3e3f7..0888456 100644
+index 8f3e3f7..8864cd0 100644
 --- a/runtime/src/gs/gpu/gpu.cpp
 +++ b/runtime/src/gs/gpu/gpu.cpp
 @@ -45,7 +45,7 @@ constexpr std::uint32_t kParamStride = 256;
@@ -1355,7 +1355,44 @@ index 8f3e3f7..0888456 100644
      const bool min_linear = mmin == 1 || mmin >= 4, levels = mxl > 0 && mmin >= 2;
      if (mmag == (min_linear ? 1u : 0u) && !levels) return 0;
      m[0] = 0x80000000u | lcm | (mxl << 1) | (mmag << 4) | (mmin << 5) | (l << 8) | (kraw << 16);
-@@ -2330,7 +2650,7 @@ bool init(Mode m) {
+@@ -1970,6 +2290,36 @@ bool drawn_under(const Batch &b, const int rect[4]) {
+     return false;
+ }
+ 
++// A texture read from memory that the batch's frame also takes up, in another width or layout: does any 8 KB page the read
++// touches hold a pixel the batch has drawn? Each such page is turned into the box it is in the frame and tested like a read of
++// the frame itself (drawn_under). The memory test before it (region) runs both ranges from their buffers' start, so any read
++// inside the frame's memory met any drawing (SR1Recomp: Smuggler's Run reads a 512-wide texture at block 128 of its 640-wide
++// frame at block 0 some 550 times a frame while driving, which ended ~2700 batches a frame for 10 to 30 ms of GPU time).
++// Returns -1 when it cannot tell (more than 512 pages, a frame not on a page boundary): the memory test decides then.
++int pages_drawn_under(const std::uint32_t *setup, const Batch &b, const int rect[4]) {
++    if (b.fbp % 32u || b.fbw == 0 || setup[13] == 0) return -1;
++    std::uint32_t tpw, tph, fpw, fph;
++    page_size(setup[14], tpw, tph);
++    page_size(b.fpsm, fpw, fph);
++    const std::uint32_t tper_row = std::max<std::uint32_t>(1, setup[13] * 64 / tpw), fper_row = std::max<std::uint32_t>(1, b.fbw * 64 / fpw);
++    const std::uint32_t c0 = static_cast<std::uint32_t>(rect[0]) / tpw, c1 = static_cast<std::uint32_t>(rect[2]) / tpw;
++    const std::uint32_t r0 = static_cast<std::uint32_t>(rect[1]) / tph, r1 = static_cast<std::uint32_t>(rect[3]) / tph;
++    if (static_cast<std::uint64_t>(c1 - c0 + 1) * (r1 - r0 + 1) > 512) return -1;
++    const std::uint32_t tbase = setup[12] / 32u, fbase = b.fbp / 32u;
++    const std::uint32_t spill = setup[12] % 32u ? 1u : 0u;  // a texture that starts inside a page also takes up part of the next one
++    for (std::uint32_t r = r0; r <= r1; ++r)
++        for (std::uint32_t c = c0; c <= c1; ++c)
++            for (std::uint32_t k = 0; k <= spill; ++k) {
++                const std::uint32_t page = tbase + r * tper_row + c + k;
++                if (page < fbase) continue;
++                const std::uint32_t q = page - fbase;
++                const int box[4] = {static_cast<int>(q % fper_row * fpw), static_cast<int>(q / fper_row * fph), static_cast<int>(q % fper_row * fpw + fpw - 1),
++                                    static_cast<int>(q / fper_row * fph + fph - 1)};
++                if (drawn_under(b, box)) return 1;
++            }
++    return 0;
++}
++
+ // PS2_EXACT_SELFTEST=1 (any program will do, no disc: docs/mgs3.md, "Checking the word sets"): runs sprite_taps and exact_clear on random sprites in 32-bit colour against a
+ // look at every pixel, the way the draw program samples (the float arithmetic of shade_at with and without a fused multiply-add, every sub-sample of the pixel, every tap of
+ // the bilinear filter, the wrap modes) and the addresses of ps2::gs::address32, which this code does not share. A sprite that the word sets let join although a pixel reads a word
+@@ -2330,7 +2680,7 @@ bool init(Mode m) {
              g_bench.reps = std::clamp<unsigned long long>(reps, 1, 500);
          }
      }
@@ -1364,7 +1401,7 @@ index 8f3e3f7..0888456 100644
      g_copy_words = (1u << 20) * g_scale * g_scale;
      if (const int tile = std::atoi(os::env("PS2_TILE").c_str()); tile == 4 || tile == 8 || tile == 16) g_tile = tile;
      g_tiles_per_row = (2048 * static_cast<int>(g_scale) + g_tile - 1) / g_tile;
-@@ -2346,10 +2666,12 @@ bool init(Mode m) {
+@@ -2346,10 +2696,12 @@ bool init(Mode m) {
      g_tables = make_buffer(tables.size() * 4, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
      wgpuQueueWriteBuffer(g_queue, g_tables, 0, tables.data(), tables.size() * 4);
      g_clut = make_buffer(static_cast<std::uint64_t>(kClutSlots) * kClutEntries * 4, WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst);
@@ -1378,7 +1415,7 @@ index 8f3e3f7..0888456 100644
      g_cache_copy.assign(kCacheWords, 0);
      g_readback = make_buffer(static_cast<std::uint64_t>(g_copy_words) * 4, WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst);
      if (g_timestamps) {
-@@ -2413,6 +2735,7 @@ bool init(Mode m) {
+@@ -2413,6 +2765,7 @@ bool init(Mode m) {
      const bool has_tile = shader_text.empty() || shader_text.find("override TILE") != std::string::npos;
      const bool has_fma = shader_text.empty() || shader_text.find("override EXPLICIT_FMA") != std::string::npos;
      const bool has_mip = shader_text.empty() || shader_text.find("override HAS_MIP") != std::string::npos;
@@ -1386,7 +1423,7 @@ index 8f3e3f7..0888456 100644
      const int scale = static_cast<int>(g_scale), tile = g_tile;
      // `mip`: the draw program that reads mipmap levels (HAS_MIP in gs.wgsl); without it the program is the plain one
      auto make_pipeline = [=](int entry, bool mip) {
-@@ -2420,7 +2743,7 @@ bool init(Mode m) {
+@@ -2420,7 +2773,7 @@ bool init(Mode m) {
          cd.layout = g_pipeline_layout;
          cd.compute.module = module;
          cd.compute.entryPoint = view(kEntryPoints[entry]);
@@ -1395,7 +1432,7 @@ index 8f3e3f7..0888456 100644
          constants[0].key = view("SCALE");
          constants[0].value = static_cast<double>(scale);
          constants[1].key = view("TILE");
-@@ -2429,7 +2752,9 @@ bool init(Mode m) {
+@@ -2429,7 +2782,9 @@ bool init(Mode m) {
          constants[2].value = explicit_fma ? 1.0 : 0.0;
          constants[3].key = view("HAS_MIP");
          constants[3].value = mip ? 1.0 : 0.0;
@@ -1406,7 +1443,24 @@ index 8f3e3f7..0888456 100644
          cd.compute.constants = constants;
          return wgpuDeviceCreateComputePipeline(g_device, &cd);
      };
-@@ -2794,6 +3119,8 @@ void load_clut(std::uint64_t tex0, std::uint64_t texclut) {
+@@ -2648,7 +3003,15 @@ void draw(const State &st, const Vertex *v, int count) {
+                     const bool small = rect[2] - rect[0] < 64 && rect[3] - rect[1] < 64;
+                     const bool cached = b.texflushes == g_texflushes && small && shares_frame(setup, b);
+                     const bool same = shares_frame(setup, b);
+-                    const bool frame = !cached && (same ? drawn_under(b, rect) : used.overlaps(b.fb_range.lo, b.fb_range.hi));
++                    // a read of other memory than the frame's own layout: page by page against what the batch drew (pages_drawn_under;
++                    // PS2_PAGE_TEST=0 leaves it to the memory test, for comparison)
++                    static const bool page_test = [] { const char *e = std::getenv("PS2_PAGE_TEST"); return !e || std::strcmp(e, "0") != 0; }();
++                    const auto other = [&] {
++                        if (!used.overlaps(b.fb_range.lo, b.fb_range.hi)) return false;
++                        const int pages = page_test ? pages_drawn_under(setup, b, rect) : -1;
++                        return pages != 0;
++                    };
++                    const bool frame = !cached && (same ? drawn_under(b, rect) : other());
+                     const bool zhit = b.zwrite && !z_untouched && used.overlaps(b.z_range.lo, b.z_range.hi);
+                     if ((frame || zhit) && !(frame && !zhit && exact_ok && exact_join())) {
+                         if (g_batch_log_frame > 1 && frame_count() == g_batch_log_frame) {
+@@ -2794,6 +3157,8 @@ void load_clut(std::uint64_t tex0, std::uint64_t texclut) {
      std::memcpy(op.rec, rec, sizeof rec);
      op.range = csm ? region(cbp, cbw, cpsm, static_cast<int>(cou * 16), static_cast<int>(cov), static_cast<int>(cou * 16 + 255), static_cast<int>(cov))
                     : region(cbp, 1, cpsm, 0, 0, 15, 15);
@@ -1415,7 +1469,7 @@ index 8f3e3f7..0888456 100644
      queue_pre(op);
      g_clut_slot = next;
      ++g_clut_loads;
-@@ -3083,6 +3410,56 @@ bool attach_surface(const SurfaceTarget &target) {
+@@ -3083,6 +3448,56 @@ bool attach_surface(const SurfaceTarget &target) {
      rd.vertex.entryPoint = view("vs");
      rd.fragment = &fragment;
      g_blit = wgpuDeviceCreateRenderPipeline(g_device, &rd);
@@ -1472,7 +1526,7 @@ index 8f3e3f7..0888456 100644
      wgpuShaderModuleRelease(module);
      wgpuPipelineLayoutRelease(pipeline_layout);
      g_blit_params = make_buffer(32, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-@@ -3212,6 +3589,76 @@ std::uint32_t display_params(const DisplaySource &src, std::uint32_t scratch_at)
+@@ -3212,6 +3627,76 @@ std::uint32_t display_params(const DisplaySource &src, std::uint32_t scratch_at)
                          o.active ? 1u : 0u, o.fbp, o.fbw, o.psm, o.dbx, o.dby, static_cast<std::uint32_t>(o.x), static_cast<std::uint32_t>(o.y), o.width, o.height});
  }
  
@@ -1549,7 +1603,7 @@ index 8f3e3f7..0888456 100644
  bool present(const DisplaySource &src) {
      if (!g_surface) return false;
      static PresentLog log;
-@@ -3219,13 +3666,18 @@ bool present(const DisplaySource &src) {
+@@ -3219,13 +3704,18 @@ bool present(const DisplaySource &src) {
      if (log.on) log.mark = PresentLog::Clock::now();
      flush_all();
      if (log.on) log.lap(log.flush);
@@ -1573,7 +1627,7 @@ index 8f3e3f7..0888456 100644
      const float vw = std::min(sw, sh * aspect), vh = vw / aspect;
      const std::uint32_t blit[8] = {src.width * g_scale, src.height * g_scale, current, previous, blend ? 1u : 0u, static_cast<std::uint32_t>(vw), static_cast<std::uint32_t>(vh), ps2::video_options()};
      wgpuQueueWriteBuffer(g_queue, g_blit_params, 0, blit, sizeof blit);
-@@ -3256,6 +3708,7 @@ bool present(const DisplaySource &src) {
+@@ -3256,6 +3746,7 @@ bool present(const DisplaySource &src) {
      const auto submit_from = PresentLog::Clock::now();
      ps2::hitch::enter_present_stage("submitting the picture (submit)");
      submit(target);
@@ -1581,7 +1635,7 @@ index 8f3e3f7..0888456 100644
      if (log.on) log.lap(log.submit);
  #ifndef __EMSCRIPTEN__
      ps2::hitch::enter_present_stage("presenting the picture (wgpuSurfacePresent)");
-@@ -3405,7 +3858,7 @@ bool present_again() {
+@@ -3405,7 +3896,7 @@ bool present_again() {
      // the same picture as the last present (its fields are still in the scratch buffer: the game draws nothing while it waits), with the
      // window's size and the picture look of now
      const float sw = static_cast<float>(g_surface_width), sh = static_cast<float>(g_surface_height);
@@ -1590,7 +1644,7 @@ index 8f3e3f7..0888456 100644
      const float vw = std::min(sw, sh * aspect), vh = vw / aspect;
      const std::uint32_t tail[3] = {static_cast<std::uint32_t>(vw), static_cast<std::uint32_t>(vh), ps2::video_options()};
      wgpuQueueWriteBuffer(g_queue, g_blit_params, 20, tail, sizeof tail);
-@@ -3504,14 +3957,59 @@ bool display_async(const DisplaySource &src, std::vector<std::uint32_t> &rgba, s
+@@ -3504,14 +3995,59 @@ bool display_async(const DisplaySource &src, std::vector<std::uint32_t> &rgba, s
  
  bool display(const DisplaySource &src, std::vector<std::uint32_t> &rgba, std::uint32_t &width, std::uint32_t &height) {
      flush_all();

@@ -104,10 +104,16 @@ the game runs, it reads its data from your disc image.
     word are on, each part's drawing is marked in the game's VIF1 packets (pointer `0x70000428`, end `0x7000042C`, full
     buffer `0x23A378`), and the runtime squeezes what a marked part draws toward the edge it is nearest. `hud43.txt` tells
     the launcher the hooks are built in.
-- `patches/ps2-native-recomp.patch`: this project's changes to the toolkit, the same as MC1Recomp's (MC2Recomp's fixes for
-  this engine, dithering, texture filtering, smooth distant textures, FSR, keyboard and controller bindings, two players,
-  conditional patch lines, the sound chip's ENDX, faster drawing at higher resolutions, fair interrupt turns and more; see
-  MC1Recomp's README for the list).
+- `patches/ps2-native-recomp.patch`: this project's changes to the toolkit: MC1Recomp's (MC2Recomp's fixes for this engine,
+  dithering, texture filtering, smooth distant textures, FSR, keyboard and controller bindings, two players, conditional
+  patch lines, the sound chip's ENDX, faster drawing at higher resolutions, fair interrupt turns and more; see MC1Recomp's
+  README for the list), plus one for Smuggler's Run:
+  - graphics speed: while driving the game reads some 550 small pieces of a 512-pixel-wide texture a frame from memory
+    that its 640-pixel-wide frame also takes up. The runtime's memory test ran both from their buffers' start, so every one
+    of those reads ended the drawing run: ~2,760 runs a frame, each waiting for the one before, 20 to 45 ms a frame even at
+    1x on an RTX 4090. Now such a read is tested page by page against what the run has drawn, which leaves about 110 runs
+    a frame; driving at 4x holds 60 FPS (16.7 ms a frame), and the pictures are bit-for-bit the same (`PS2_PAGE_TEST=0`
+    turns it off, for comparison).
 - `ps2-native-recomp/`: the toolkit, as a git submodule.
 - `tools/`: the build script, the release packaging script and `mips.py` (a small R5900 disassembler and
   address-reference finder used to trace the game's code).

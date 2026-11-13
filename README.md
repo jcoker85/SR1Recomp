@@ -42,6 +42,11 @@ Windows 10 or 11 (64-bit), a CPU with AVX2 and a Direct3D 12 graphics card.
 - **Color Settings**: the PS2's 16-bit picture, or the game's full 32-bit picture; **Dithering** (the PS2's dither on the
   16-bit picture)
 - **Smooth Distant Textures** (less shimmer on far terrain; not something a PS2 does)
+- **Fix Distant Z-Fighting** (not something a PS2 does): far away, the game's 16-bit depth buffer can't tell apart two
+  surfaces drawn on top of each other, such as a mountain's rock and the snow layer on it, so they take turns as the view
+  moves (the snow on the snow level's mountains changes shape while you drive). With this on, the depth test also keeps the
+  fraction of each depth, so the nearer surface wins every frame. Where the game's snow sits just behind the rock, that
+  means steady rock where the PS2 shows flickering patches of snow
 - **Skip Intro**: straight to the title screen, with the game's own developer switch (`-novideo`, read by the movie
   player's constructor at `0x1D7374`)
 
@@ -113,7 +118,11 @@ the game runs, it reads its data from your disc image.
     of those reads ended the drawing run: ~2,760 runs a frame, each waiting for the one before, 20 to 45 ms a frame even at
     1x on an RTX 4090. Now such a read is tested page by page against what the run has drawn, which leaves about 110 runs
     a frame; driving at 4x holds 60 FPS (16.7 ms a frame), and the pictures are bit-for-bit the same (`PS2_PAGE_TEST=0`
-    turns it off, for comparison).
+    turns it off, for comparison);
+  - Fix Distant Z-Fighting (`PS2_DEPTH_FRAC=1`): 16-bit depth keeps 8 bits of its fraction in a second region after the
+    emulated memory (the buffer is twice as large when it is on), tagged with the low 8 bits of the depth it belongs to, so a
+    depth written another way (an upload, a copy) counts as having none, as on the PS2. Found on the snow level: a mountain's
+    rock and its snow layer about 0.6 of a depth step apart at depth ~25 of 65,535, where rounding decided which showed.
 - `ps2-native-recomp/`: the toolkit, as a git submodule.
 - `tools/`: the build script, the release packaging script and `mips.py` (a small R5900 disassembler and
   address-reference finder used to trace the game's code).

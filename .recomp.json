@@ -8,7 +8,7 @@
     "serial": "SLUS-20065"
   },
   "project": "SR1Recomp",
-  "status": "in-progress",
+  "status": "released",
   "targets": ["Windows"],
   "toolchain": "ps2-native-recomp",
   "approach": "Static recompilation with widescreen, 60 FPS and higher resolutions",
